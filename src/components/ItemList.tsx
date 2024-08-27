@@ -33,7 +33,7 @@ const ItemList: React.FC<ItemListProps> = ({ items }) => {
             </a>
             <div className="p-4">
               <h3 className="text-lg font-bold">{item.name}</h3>
-              <p className="text-gray-700">{item.price}</p>
+              <p className="text-gray-700">${item.price}</p>
               <p className="text-gray-500 text-sm font-semibold">
                 {item.category}
               </p>

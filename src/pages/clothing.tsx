@@ -1,190 +1,188 @@
+import { useState, useEffect, useCallback, useRef } from "react";
 import { GetServerSideProps } from "next";
-import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import NavBar from "@/components/NavBar";
 import Sidebar from "@/components/Sidebar";
 import ItemList from "@/components/ItemList";
 import MobileFilters from "@/components/MobileFilters";
-import Button from "@/components/Button";
 import ScrollToTopButton from "@/components/ScrollToTopButton";
 import mongoose from "mongoose";
+import ClothingItem from "@/models/ClothingItem";
 
-// Define the ClothingItem schema directly here
-const clothingItemSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  price: { type: String, required: true },
-  category: { type: String, required: true },
-  imageUrl: { type: String, required: true },
-  link: { type: String, required: true },
-  company: { type: String, required: true },
-  tags: { type: [String], required: true },
-});
-
-const ClothingItem =
-  mongoose.models.ClothingItems ||
-  mongoose.model("ClothingItems", clothingItemSchema, "clothingitems");
-
-type ClothingProps = {
-  items: any[];
+const Clothing: React.FC<{
+  initialItems: any[];
+  totalItemsCount: number;
   availableTags: string[];
-};
-
-const Clothing: React.FC<ClothingProps> = ({ items, availableTags }) => {
+}> = ({ initialItems, totalItemsCount, availableTags }) => {
   const router = useRouter();
-  const [filteredItems, setFilteredItems] = useState(items);
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  const [activeCategories, setActiveCategories] = useState<string[]>([]);
-  const [activeCompanies, setActiveCompanies] = useState<string[]>([]);
-  const [activePriceRange, setActivePriceRange] = useState<string | null>(null);
+  const [loadedItems, setLoadedItems] = useState(initialItems);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(initialItems.length < totalItemsCount);
+  const [filters, setFilters] = useState({
+    tags: Array.isArray(router.query.tags)
+      ? router.query.tags
+      : router.query.tags
+      ? router.query.tags.split(",")
+      : [],
+    categories: Array.isArray(router.query.categories)
+      ? router.query.categories
+      : router.query.categories
+      ? router.query.categories.split(",")
+      : [],
+    companies: Array.isArray(router.query.companies)
+      ? router.query.companies
+      : router.query.companies
+      ? router.query.companies.split(",")
+      : [],
+    price: Array.isArray(router.query.price)
+      ? router.query.price[0]
+      : router.query.price || null,
+  });
 
-  // Function to shuffle items
-  const shuffleItems = () => {
-    const shuffled = [...filteredItems].sort(() => Math.random() - 0.5);
-    setFilteredItems(shuffled);
+  // Cache to store loaded items
+  const itemCache = useRef<{ [key: string]: any[] }>({});
+
+  const generateCacheKey = (filters: any, page: number) => {
+    return `${JSON.stringify(filters)}|page:${page}`;
   };
 
-  const handleFilterChange = (filter: string, checked: boolean) => {
-    const queryParams = new URLSearchParams(router.query as any);
+  const cleanFilters = (filters: any) => {
+    const cleanedFilters = { ...filters };
+    Object.keys(cleanedFilters).forEach((key) => {
+      if (
+        Array.isArray(cleanedFilters[key]) &&
+        cleanedFilters[key].length === 0
+      ) {
+        delete cleanedFilters[key];
+      } else if (!cleanedFilters[key]) {
+        delete cleanedFilters[key];
+      }
+    });
+    return cleanedFilters;
+  };
 
-    const newFilters = checked
-      ? [...activeFilters, filter]
-      : activeFilters.filter((f) => f !== filter);
+  const fetchItems = useCallback(
+    async (newPage = 1, appliedFilters = filters) => {
+      setLoading(true);
+      const cacheKey = generateCacheKey(appliedFilters, newPage);
 
-    setActiveFilters(newFilters);
+      if (itemCache.current[cacheKey]) {
+        const cachedItems = itemCache.current[cacheKey];
+        if (newPage === 1) {
+          setLoadedItems(cachedItems);
+        } else {
+          setLoadedItems((prev) => [...prev, ...cachedItems]);
+        }
+      } else {
+        const query = new URLSearchParams(
+          cleanFilters({
+            ...appliedFilters,
+            page: String(newPage),
+          })
+        );
 
-    queryParams.delete("tags");
-    newFilters.forEach((f) => queryParams.append("tags", f));
+        const res = await fetch(`/api/items?${query.toString()}`);
+        const { items } = await res.json();
 
-    router.replace({
+        if (newPage === 1) {
+          setLoadedItems(items);
+        } else {
+          setLoadedItems((prev) => [...prev, ...items]);
+        }
+
+        // Cache the loaded items
+        itemCache.current[cacheKey] = items;
+
+        if (items.length === 0 || items.length < 16) {
+          setHasMore(false);
+        }
+      }
+
+      setPage(newPage);
+      setLoading(false);
+    },
+    [filters]
+  );
+
+  const handleFilterChange = (newFilters: any) => {
+    setFilters(newFilters);
+    setPage(1); // Reset page to 1 when filters change
+    setHasMore(true); // Allow loading more items after filters change
+    fetchItems(1, newFilters);
+
+    const query = new URLSearchParams(cleanFilters(newFilters));
+
+    router.push({
       pathname: router.pathname,
-      query: queryParams.toString(),
+      query: query.toString(),
     });
   };
 
-  const handleCategoryChange = (category: string, checked: boolean) => {
-    const queryParams = new URLSearchParams(router.query as any);
+  const toggleFilter = (filterType: string, value: string | string[]) => {
+    let newFilters: {
+      tags: string[];
+      categories: string[];
+      companies: string[];
+      price: string | null;
+    } = { ...filters };
 
-    const newCategories = checked
-      ? [...activeCategories, category]
-      : activeCategories.filter((c) => c !== category);
-
-    setActiveCategories(newCategories);
-
-    queryParams.delete("categories");
-    newCategories.forEach((c) => queryParams.append("categories", c));
-
-    router.replace({
-      pathname: router.pathname,
-      query: queryParams.toString(),
-    });
-  };
-
-  const handleCompanyChange = (company: string, checked: boolean) => {
-    const queryParams = new URLSearchParams(router.query as any);
-
-    const newCompanies = checked
-      ? [...activeCompanies, company]
-      : activeCompanies.filter((c) => c !== company);
-
-    setActiveCompanies(newCompanies);
-
-    queryParams.delete("company");
-    newCompanies.forEach((c) => queryParams.append("company", c));
-
-    router.replace({
-      pathname: router.pathname,
-      query: queryParams.toString(),
-    });
-  };
-
-  const handlePriceChange = (priceRange: string, checked: boolean) => {
-    const queryParams = new URLSearchParams(router.query as any);
-
-    setActivePriceRange(checked ? priceRange : null);
-
-    if (checked) {
-      queryParams.set("price", priceRange);
-    } else {
-      queryParams.delete("price");
+    if (
+      filterType === "tags" ||
+      filterType === "categories" ||
+      filterType === "companies"
+    ) {
+      const filterIndex = newFilters[filterType].indexOf(value as string);
+      if (filterIndex > -1) {
+        // If the filter already exists, remove it
+        newFilters[filterType] = newFilters[filterType].filter(
+          (f) => f !== value
+        );
+      } else {
+        // Otherwise, add it
+        if (Array.isArray(value)) {
+          newFilters[filterType].push(...value);
+        } else {
+          newFilters[filterType].push(value);
+        }
+      }
+    } else if (filterType === "price") {
+      // Toggle price filter
+      newFilters.price = Array.isArray(value) ? value[0] : value;
     }
 
-    router.replace({
-      pathname: router.pathname,
-      query: queryParams.toString(),
-    });
+    handleFilterChange(newFilters);
   };
 
-  const clearFilters = () => {
-    setActiveFilters([]);
-    setActiveCategories([]);
-    setActiveCompanies([]);
-    setActivePriceRange(null);
+  const loadMoreItems = useCallback(() => {
+    if (!hasMore || loading) return;
+    fetchItems(page + 1);
+  }, [page, hasMore, loading, fetchItems]);
 
-    router.replace({
-      pathname: router.pathname,
-      query: {},
-    });
+  // Debounce implementation to prevent multiple API calls on scroll
+  const debounce = (func: () => void, wait: number) => {
+    let timeout: NodeJS.Timeout;
+    return (...args: []) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(this, args), wait);
+    };
   };
 
   useEffect(() => {
-    const tagsFromUrl = router.query.tags
-      ? Array.isArray(router.query.tags)
-        ? router.query.tags
-        : [router.query.tags]
-      : [];
+    const handleScroll = debounce(() => {
+      if (
+        window.innerHeight + window.scrollY >=
+          document.body.offsetHeight - 500 &&
+        hasMore &&
+        !loading
+      ) {
+        loadMoreItems();
+      }
+    }, 200); // 200ms debounce time
 
-    const categoriesFromUrl = router.query.categories
-      ? Array.isArray(router.query.categories)
-        ? router.query.categories
-        : [router.query.categories]
-      : [];
-
-    const companiesFromUrl = router.query.company
-      ? Array.isArray(router.query.company)
-        ? router.query.company
-        : [router.query.company]
-      : [];
-
-    const priceFromUrl = router.query.price as string | undefined;
-
-    setActiveFilters(tagsFromUrl);
-    setActiveCategories(categoriesFromUrl);
-    setActiveCompanies(companiesFromUrl);
-    setActivePriceRange(priceFromUrl || null);
-
-    const filtered = items.filter((item) => {
-      const itemPrice = parseFloat(item.price.replace(/[^0-9.-]+/g, ""));
-      const isPriceMatch =
-        !priceFromUrl ||
-        (priceFromUrl === "less-50" && itemPrice < 50) ||
-        (priceFromUrl === "50-100" && itemPrice >= 50 && itemPrice < 100) ||
-        (priceFromUrl === "100-200" && itemPrice >= 100 && itemPrice < 200) ||
-        (priceFromUrl === "200-500" && itemPrice >= 200 && itemPrice < 500) ||
-        (priceFromUrl === "more-500" && itemPrice >= 500);
-
-      const isCompanyMatch =
-        companiesFromUrl.length === 0 ||
-        companiesFromUrl.includes(item.company);
-
-      const isCategoryMatch =
-        categoriesFromUrl.length === 0 ||
-        categoriesFromUrl.includes(item.category);
-
-      const isTagMatch =
-        tagsFromUrl.length === 0 ||
-        tagsFromUrl.every((filter) => item.tags.includes(filter));
-
-      return isPriceMatch && isCompanyMatch && isCategoryMatch && isTagMatch;
-    });
-
-    setFilteredItems(filtered);
-  }, [
-    router.query.tags,
-    router.query.categories,
-    router.query.company,
-    router.query.price,
-    items,
-  ]);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [loading, hasMore, loadMoreItems]);
 
   return (
     <div>
@@ -194,54 +192,69 @@ const Clothing: React.FC<ClothingProps> = ({ items, availableTags }) => {
           <h1 className="text-4xl font-bold tracking-tight text-gray-900">
             Clothing
           </h1>
-          <Button
-            onClick={shuffleItems}
-            className="text-goods-500 text-sm font-medium"
-          >
-            Randomize
-          </Button>
         </div>
 
-        {/* Mobile Filters */}
         <div className="lg:hidden">
           <MobileFilters
             availableTags={availableTags}
-            activeFilters={activeFilters}
-            activeCategories={activeCategories}
-            activeCompanies={activeCompanies}
-            activePriceRange={activePriceRange}
-            onFilterChange={handleFilterChange}
-            onCategoryChange={handleCategoryChange}
-            onCompanyChange={handleCompanyChange}
-            onPriceChange={handlePriceChange}
-            clearFilters={clearFilters}
+            activeFilters={filters.tags}
+            activeCategories={filters.categories}
+            activeCompanies={filters.companies}
+            activePriceRange={filters.price as string | null}
+            onFilterChange={(tags) => toggleFilter("tags", tags)}
+            onCategoryChange={(categories) =>
+              toggleFilter("categories", categories)
+            }
+            onCompanyChange={(companies) =>
+              toggleFilter("companies", companies)
+            }
+            onPriceChange={(price) => toggleFilter("price", price)}
+            clearFilters={() =>
+              handleFilterChange({
+                tags: [],
+                categories: [],
+                companies: [],
+                price: null,
+              })
+            }
           />
         </div>
 
-        {/* Sidebar Filters */}
         <div className="pt-12 lg:grid lg:grid-cols-3 lg:gap-x-8 xl:grid-cols-4">
           <aside className="h-screen sticky top-24 lg:block hidden">
             <h2 className="sr-only">Filters</h2>
             <div className="overflow-y-auto max-h-[calc(100vh-96px)]">
               <Sidebar
                 availableTags={availableTags}
-                activeFilters={activeFilters}
-                activeCategories={activeCategories}
-                activeCompanies={activeCompanies}
-                activePriceRange={activePriceRange}
-                onFilterChange={handleFilterChange}
-                onCategoryChange={handleCategoryChange}
-                onCompanyChange={handleCompanyChange}
-                onPriceChange={handlePriceChange}
-                clearFilters={clearFilters}
+                activeFilters={filters.tags}
+                activeCategories={filters.categories}
+                activeCompanies={filters.companies}
+                activePriceRange={filters.price}
+                onFilterChange={(tags) => toggleFilter("tags", tags)}
+                onCategoryChange={(categories) =>
+                  toggleFilter("categories", categories)
+                }
+                onCompanyChange={(companies) =>
+                  toggleFilter("companies", companies)
+                }
+                onPriceChange={(price) => toggleFilter("price", price)}
+                clearFilters={() =>
+                  handleFilterChange({
+                    tags: [],
+                    categories: [],
+                    companies: [],
+                    price: null,
+                  })
+                }
               />
             </div>
           </aside>
 
-          {/* Product grid */}
           <div className="mt-6 lg:col-span-2 lg:mt-0 xl:col-span-3">
-            <ItemList items={filteredItems} />
+            <ItemList items={loadedItems} />
           </div>
+
+          {loading && <div>Loading more items...</div>}
 
           <ScrollToTopButton />
         </div>
@@ -251,17 +264,29 @@ const Clothing: React.FC<ClothingProps> = ({ items, availableTags }) => {
 };
 
 export const getServerSideProps: GetServerSideProps = async (context) => {
-  await mongoose.connect(process.env.MONGODB_URI!, {});
+  try {
+    await mongoose.connect(process.env.MONGODB_URI!, {});
+    const initialItems = await ClothingItem.find({}).limit(16).exec();
+    const totalItemsCount = await ClothingItem.countDocuments();
+    const availableTags = await ClothingItem.distinct("tags");
 
-  const items = await ClothingItem.find({}).exec();
-  const availableTags = await ClothingItem.distinct("tags");
-
-  return {
-    props: {
-      items: JSON.parse(JSON.stringify(items)),
-      availableTags,
-    },
-  };
+    return {
+      props: {
+        initialItems: JSON.parse(JSON.stringify(initialItems)),
+        totalItemsCount,
+        availableTags,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching data from MongoDB:", error);
+    return {
+      props: {
+        initialItems: [],
+        totalItemsCount: 0,
+        availableTags: [],
+      },
+    };
+  }
 };
 
 export default Clothing;

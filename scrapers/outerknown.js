@@ -12,7 +12,7 @@ mongoose
 // Define the schema and model directly within the file
 const clothingItemSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  price: { type: String, required: true },
+  price: { type: Number, required: true }, // Changed to Number
   category: { type: String, required: true },
   imageUrl: { type: String, required: true },
   link: { type: String, required: true },
@@ -181,8 +181,9 @@ const categorizeAndTagItem = (name, category) => {
     );
     return productItems.map((item) => {
       const data = JSON.parse(item.querySelector(".nosto-data").innerText);
+      console.log("Data:", data);
       const name = data.name || "";
-      const price = `$${data.price}` || "";
+      const price = data.price;
       const category = data.categories.join(", ") || "";
       const imageUrl = data.imageUrl || "";
       const link = data.url || "";
