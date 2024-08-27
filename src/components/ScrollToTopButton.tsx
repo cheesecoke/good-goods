@@ -4,14 +4,21 @@ import { ChevronUpIcon } from "@heroicons/react/20/solid";
 const ScrollToTopButton = () => {
   const [isVisible, setIsVisible] = useState(false);
 
-  // Show the button when the user scrolls down 200px from the top
-  const toggleVisibility = () => {
-    if (window.pageYOffset > 200) {
+  const debounce = (func: Function, wait: number) => {
+    let timeout: NodeJS.Timeout;
+    return function (this: any, ...args: any[]) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+  };
+
+  const toggleVisibility = debounce(() => {
+    if (window.scrollY > 200) {
       setIsVisible(true);
     } else {
       setIsVisible(false);
     }
-  };
+  }, 100);
 
   const scrollToTop = () => {
     window.scrollTo({
@@ -23,7 +30,7 @@ const ScrollToTopButton = () => {
   useEffect(() => {
     window.addEventListener("scroll", toggleVisibility);
     return () => window.removeEventListener("scroll", toggleVisibility);
-  }, []);
+  }, [toggleVisibility]);
 
   return (
     isVisible && (

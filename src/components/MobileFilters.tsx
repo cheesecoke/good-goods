@@ -25,10 +25,10 @@ const priceRanges = [
 
 const MobileFilters: React.FC<MobileFiltersProps> = ({
   availableTags,
-  activeFilters,
-  activeCategories,
-  activeCompanies,
-  activePriceRange,
+  activeFilters = [],
+  activeCategories = [],
+  activeCompanies = [],
+  activePriceRange = null,
   onFilterChange,
   onCategoryChange,
   onCompanyChange,

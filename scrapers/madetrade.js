@@ -5,14 +5,13 @@ require("dotenv").config();
 const MONGODB_URI = process.env.MONGODB_URI;
 
 mongoose
-  .connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .connect(MONGODB_URI)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Define the schema and model directly within the file
 const clothingItemSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  price: { type: String, required: true },
+  price: { type: Number, required: true },
   category: { type: String, required: true },
   imageUrl: { type: String, required: true },
   link: { type: String, required: true },
@@ -32,28 +31,24 @@ const scrollPage = async (page) => {
       let totalHeight = 0;
       const distance = 100;
       const timer = setInterval(() => {
-        const scrollHeight = document.body.scrollHeight;
         window.scrollBy(0, distance);
         totalHeight += distance;
-
-        if (totalHeight >= scrollHeight - window.innerHeight) {
+        if (totalHeight >= document.body.scrollHeight) {
           clearInterval(timer);
           resolve();
         }
-      }, 200);
+      }, 100);
     });
   });
 };
 
 const categorizeAndTagItem = (name, category) => {
-  const tags = ["Recycled"];
+  const tags = [];
   let mainCategory = "";
 
-  // Lowercase name and category for case-insensitive matching
   const lowerName = name.toLowerCase();
   const lowerCategory = category.toLowerCase();
 
-  // Add gender tags based on name or category
   if (lowerName.includes("men's") || lowerCategory.includes("men's")) {
     tags.push("Men's");
   } else if (
@@ -63,65 +58,15 @@ const categorizeAndTagItem = (name, category) => {
     tags.push("Women's");
   }
 
-  // Categorize and add tags
   if (lowerName.includes("dress")) {
     mainCategory = "Dresses";
     tags.push("Dresses");
-  } else if (
-    lowerName.includes("top") ||
-    lowerName.includes("shirt") ||
-    lowerName.includes("tee") ||
-    lowerName.includes("blouse") ||
-    lowerName.includes("sweater") ||
-    lowerName.includes("hoodie") ||
-    lowerName.includes("tank") ||
-    lowerCategory.includes("top") ||
-    lowerCategory.includes("shirt") ||
-    lowerCategory.includes("sweater") ||
-    lowerCategory.includes("hoodie") ||
-    lowerCategory.includes("blouse") ||
-    lowerCategory.includes("tank")
-  ) {
+  } else if (lowerName.includes("top") || lowerName.includes("shirt")) {
     mainCategory = "Tops";
-    if (lowerName.includes("shirt") || lowerName.includes("tee"))
-      tags.push("Shirts");
-    if (lowerName.includes("sweater")) tags.push("Sweaters");
-    if (lowerName.includes("blouse")) tags.push("Blouses");
-    if (lowerName.includes("hoodie")) tags.push("Hoodies");
-    if (lowerName.includes("tank")) tags.push("Tanks");
-  } else if (lowerName.includes("pant") || lowerCategory.includes("pant")) {
+    tags.push("Shirts");
+  } else if (lowerName.includes("pant")) {
     mainCategory = "Bottoms";
     tags.push("Pants");
-  } else if (
-    lowerName.includes("short") ||
-    lowerName.includes("trunk") ||
-    lowerCategory.includes("short") ||
-    lowerCategory.includes("trunk")
-  ) {
-    mainCategory = "Bottoms";
-    tags.push("Shorts");
-    if (lowerName.includes("trunk")) tags.push("Trunks");
-  } else if (
-    lowerName.includes("jacket") ||
-    lowerName.includes("pullover") ||
-    lowerName.includes("coat") ||
-    lowerCategory.includes("jacket") ||
-    lowerCategory.includes("pullover") ||
-    lowerCategory.includes("coat")
-  ) {
-    mainCategory = "Outerwear";
-    if (lowerName.includes("jacket")) tags.push("Jackets");
-    if (lowerName.includes("pullover")) tags.push("Pullovers");
-    if (lowerName.includes("coat")) tags.push("Coats");
-  } else if (
-    lowerName.includes("hat") ||
-    lowerName.includes("belt") ||
-    lowerCategory.includes("hat") ||
-    lowerCategory.includes("belt")
-  ) {
-    mainCategory = "Miscellaneous";
-    if (lowerName.includes("hat")) tags.push("Hats");
-    if (lowerName.includes("belt")) tags.push("Belts");
   } else {
     mainCategory = "Miscellaneous";
   }
@@ -141,43 +86,44 @@ const categorizeAndTagItem = (name, category) => {
 
   await page.goto(company.url, { waitUntil: "networkidle2", timeout: 60000 });
 
-  // Scroll to load more items
   await scrollPage(page);
 
   const items = await page.evaluate(() => {
     const productItems = Array.from(document.querySelectorAll(".ProductItem"));
+    console.log("Number of product items found:", productItems.length);
+
     return productItems
       .map((item) => {
         const name =
           item.querySelector(".ProductItem__Title a")?.innerText || "";
-        const price =
-          item.querySelector(".ProductItem__Price")?.innerText || "";
-        const category =
-          item.querySelector(".stamped-product-reviews-badge")?.dataset
-            .productType || "";
+        let priceString =
+          item.querySelector(".ProductItem__PriceList .Price--highlight")
+            ?.innerText ||
+          item.querySelector(".ProductItem__Price")?.innerText ||
+          "";
+        const price = parseFloat(priceString.replace(/[^0-9.]/g, ""));
+        const category = ""; // In the original HTML, no specific category was found.
         let imageUrl =
           item
             .querySelector(".ProductItem__ImageWrapper img")
             ?.getAttribute("data-srcset")
             ?.split(", ")[0]
-            .split(" ")[0] || "";
+            ?.split(" ")[0] || "";
         const link =
           "https://www.madetrade.com" +
           (item.querySelector(".ProductItem__Title a")?.getAttribute("href") ||
             "");
 
-        // Ensure the image URL is absolute
         if (imageUrl.startsWith("//")) {
           imageUrl = "https:" + imageUrl;
         }
 
         return { name, price, category, imageUrl, link };
       })
-      .filter(
-        (item) =>
-          item.name && item.price && item.category && item.imageUrl && item.link
-      );
+      .filter((item) => item.name && item.price && item.imageUrl && item.link);
   });
+
+  console.log("Total items scraped:", items.length);
 
   if (items.length === 0) {
     console.error("No items scraped, exiting...");

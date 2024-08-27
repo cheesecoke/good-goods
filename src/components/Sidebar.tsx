@@ -66,10 +66,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCompanyChange,
   onPriceChange,
   clearFilters,
-  activeFilters,
-  activeCategories,
-  activeCompanies,
-  activePriceRange,
+  activeFilters = [],
+  activeCategories = [],
+  activeCompanies = [],
+  activePriceRange = null,
 }) => {
   return (
     <form className="divide-y divide-gray-200">
