@@ -1,13 +1,29 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
+import React, {
+  Suspense,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 import { GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import NavBar from "@/components/NavBar";
-import Sidebar from "@/components/Sidebar";
-import ItemList from "@/components/ItemList";
-import MobileFilters from "@/components/MobileFilters";
-import ScrollToTopButton from "@/components/ScrollToTopButton";
 import mongoose from "mongoose";
 import ClothingItem from "@/models/ClothingItem";
+
+// Next.js dynamic imports
+const Sidebar = dynamic(() => import("@/components/Sidebar"), { ssr: false });
+const ScrollToTopButton = dynamic(
+  () => import("@/components/ScrollToTopButton"),
+  {
+    ssr: false,
+  }
+);
+
+// React.lazy components
+const ItemList = React.lazy(() => import("@/components/ItemList"));
+const MobileFilters = React.lazy(() => import("@/components/MobileFilters"));
 
 const Clothing: React.FC<{
   initialItems: any[];
@@ -159,29 +175,28 @@ const Clothing: React.FC<{
     fetchItems(page + 1);
   }, [page, hasMore, loading, fetchItems]);
 
-  // Debounce implementation to prevent multiple API calls on scroll
-  const debounce = (func: () => void, wait: number) => {
-    let timeout: NodeJS.Timeout;
-    return (...args: []) => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-  };
+  // Use Intersection Observer instead of scroll event
+  const observerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const handleScroll = debounce(() => {
-      if (
-        window.innerHeight + window.scrollY >=
-          document.body.offsetHeight - 500 &&
-        hasMore &&
-        !loading
-      ) {
-        loadMoreItems();
-      }
-    }, 200); // 200ms debounce time
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading) {
+          loadMoreItems();
+        }
+      },
+      { rootMargin: "100px" } // Trigger 100px before the end of the page
+    );
 
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    if (observerRef.current) {
+      observer.observe(observerRef.current);
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observer.unobserve(observerRef.current);
+      }
+    };
   }, [loading, hasMore, loadMoreItems]);
 
   return (
@@ -195,29 +210,31 @@ const Clothing: React.FC<{
         </div>
 
         <div className="lg:hidden">
-          <MobileFilters
-            availableTags={availableTags}
-            activeFilters={filters.tags}
-            activeCategories={filters.categories}
-            activeCompanies={filters.companies}
-            activePriceRange={filters.price as string | null}
-            onFilterChange={(tags) => toggleFilter("tags", tags)}
-            onCategoryChange={(categories) =>
-              toggleFilter("categories", categories)
-            }
-            onCompanyChange={(companies) =>
-              toggleFilter("companies", companies)
-            }
-            onPriceChange={(price) => toggleFilter("price", price)}
-            clearFilters={() =>
-              handleFilterChange({
-                tags: [],
-                categories: [],
-                companies: [],
-                price: null,
-              })
-            }
-          />
+          <Suspense fallback={<div>Loading Filters...</div>}>
+            <MobileFilters
+              availableTags={availableTags}
+              activeFilters={filters.tags}
+              activeCategories={filters.categories}
+              activeCompanies={filters.companies}
+              activePriceRange={filters.price as string | null}
+              onFilterChange={(tags) => toggleFilter("tags", tags)}
+              onCategoryChange={(categories) =>
+                toggleFilter("categories", categories)
+              }
+              onCompanyChange={(companies) =>
+                toggleFilter("companies", companies)
+              }
+              onPriceChange={(price) => toggleFilter("price", price)}
+              clearFilters={() =>
+                handleFilterChange({
+                  tags: [],
+                  categories: [],
+                  companies: [],
+                  price: null,
+                })
+              }
+            />
+          </Suspense>
         </div>
 
         <div className="pt-12 lg:grid lg:grid-cols-3 lg:gap-x-8 xl:grid-cols-4">
@@ -251,7 +268,10 @@ const Clothing: React.FC<{
           </aside>
 
           <div className="mt-6 lg:col-span-2 lg:mt-0 xl:col-span-3">
-            <ItemList items={loadedItems} />
+            <Suspense fallback={<div>Loading Items...</div>}>
+              <ItemList items={loadedItems} />
+            </Suspense>
+            <div ref={observerRef}></div>
           </div>
 
           {loading && <div>Loading more items...</div>}
