@@ -25,16 +25,26 @@ const ScrollToTopButton = dynamic(
 const ItemList = React.lazy(() => import("@/components/ItemList"));
 const MobileFilters = React.lazy(() => import("@/components/MobileFilters"));
 
+let isConnected = false;
+const connectToDatabase = async () => {
+  if (!isConnected) {
+    await mongoose.connect(process.env.MONGODB_URI!, {});
+    isConnected = true;
+  }
+};
+
 const Clothing: React.FC<{
   initialItems: any[];
   totalItemsCount: number;
   availableTags: string[];
 }> = ({ initialItems, totalItemsCount, availableTags }) => {
   const router = useRouter();
-  const [loadedItems, setLoadedItems] = useState(initialItems);
+  const [loadedItems, setLoadedItems] = useState(initialItems || []);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(initialItems.length < totalItemsCount);
+  const [hasMore, setHasMore] = useState(
+    initialItems?.length < totalItemsCount
+  );
   const [filters, setFilters] = useState({
     tags: Array.isArray(router.query.tags)
       ? router.query.tags
@@ -102,9 +112,9 @@ const Clothing: React.FC<{
         const { items } = await res.json();
 
         if (newPage === 1) {
-          setLoadedItems(items);
+          setLoadedItems(items || []);
         } else {
-          setLoadedItems((prev) => [...prev, ...items]);
+          setLoadedItems((prev) => [...prev, ...(items || [])]);
         }
 
         // Cache the loaded items
@@ -188,13 +198,15 @@ const Clothing: React.FC<{
       { rootMargin: "100px" } // Trigger 100px before the end of the page
     );
 
-    if (observerRef.current) {
-      observer.observe(observerRef.current);
+    const currentObserverRef = observerRef.current;
+
+    if (currentObserverRef) {
+      observer.observe(currentObserverRef);
     }
 
     return () => {
-      if (observerRef.current) {
-        observer.unobserve(observerRef.current);
+      if (currentObserverRef) {
+        observer.unobserve(currentObserverRef);
       }
     };
   }, [loading, hasMore, loadMoreItems]);
@@ -269,8 +281,13 @@ const Clothing: React.FC<{
 
           <div className="mt-6 lg:col-span-2 lg:mt-0 xl:col-span-3">
             <Suspense fallback={<div>Loading Items...</div>}>
-              <ItemList items={loadedItems} />
+              {Array.isArray(loadedItems) && loadedItems.length > 0 ? (
+                <ItemList items={loadedItems} />
+              ) : (
+                <div>No Items to display.</div>
+              )}
             </Suspense>
+
             <div ref={observerRef}></div>
           </div>
 
@@ -283,17 +300,35 @@ const Clothing: React.FC<{
   );
 };
 
+let cachedTags: string[] | null = null;
+let cachedItemCount: number | null = null;
+
 export const getServerSideProps: GetServerSideProps = async (context) => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI!, {});
-    const initialItems = await ClothingItem.find({}).limit(16).exec();
-    const totalItemsCount = await ClothingItem.countDocuments();
-    const availableTags = await ClothingItem.distinct("tags");
+    await connectToDatabase();
+
+    const initialItems = await ClothingItem.find(
+      {},
+      "name price category imageUrl link company"
+    )
+      .limit(16)
+      .exec();
+
+    if (!cachedItemCount) {
+      cachedItemCount = await ClothingItem.countDocuments();
+    }
+
+    if (!cachedTags) {
+      cachedTags = await ClothingItem.distinct("tags");
+    }
+
+    // Ensure availableTags is an array and filter out any undefined values
+    const availableTags = cachedTags?.filter((tag) => tag !== undefined) || [];
 
     return {
       props: {
-        initialItems: JSON.parse(JSON.stringify(initialItems)),
-        totalItemsCount,
+        initialItems: JSON.parse(JSON.stringify(initialItems)) || [],
+        totalItemsCount: cachedItemCount || 0,
         availableTags,
       },
     };
