@@ -10,10 +10,6 @@
       "memory": 1024
     }
   },
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/" }
-  ],
   "env": {
     "MONGODB_URI": "@mongodb_uri"
   },
@@ -21,6 +17,10 @@
     {
       "source": "/clothing.json",
       "destination": "/api/items"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
     }
   ]
 }
