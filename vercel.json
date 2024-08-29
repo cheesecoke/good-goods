@@ -1,11 +1,11 @@
 {
   "version": 2,
   "functions": {
-    "api/items": {
+    "api/items.ts": {
       "maxDuration": 55,
       "memory": 1024
     },
-    "api/[company]": {
+    "api/[company].ts": {
       "maxDuration": 55,
       "memory": 1024
     }
