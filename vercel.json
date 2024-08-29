@@ -10,9 +10,6 @@
       "memory": 1024
     }
   },
-  "env": {
-    "MONGODB_URI": "@MONGODB_URI"
-  },
   "rewrites": [
     {
       "source": "/clothing.json",
