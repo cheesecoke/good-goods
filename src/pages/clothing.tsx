@@ -307,20 +307,19 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
   try {
     await connectToDatabase();
 
-    const initialItems = await ClothingItem.find(
-      {},
-      "name price category imageUrl link company"
-    )
-      .limit(16)
-      .exec();
+    const [initialItems, itemCount, tags] = await Promise.all([
+      ClothingItem.find({}, "name price category imageUrl link company")
+        .limit(16)
+        .exec(),
+      cachedItemCount
+        ? Promise.resolve(cachedItemCount)
+        : ClothingItem.countDocuments(),
+      cachedTags ? Promise.resolve(cachedTags) : ClothingItem.distinct("tags"),
+    ]);
 
-    if (!cachedItemCount) {
-      cachedItemCount = await ClothingItem.countDocuments();
-    }
-
-    if (!cachedTags) {
-      cachedTags = await ClothingItem.distinct("tags");
-    }
+    // Cache the item count and tags if not already cached
+    if (!cachedItemCount) cachedItemCount = itemCount;
+    if (!cachedTags) cachedTags = tags;
 
     // Ensure availableTags is an array and filter out any undefined values
     const availableTags = cachedTags?.filter((tag) => tag !== undefined) || [];
