@@ -1,7 +1,36 @@
 {
-  "functions": {
-    "app/api/**/*": {
-      "maxDuration": 55
+  "version": 2,
+  "builds": [
+    {
+      "src": "next.config.js",
+      "use": "@vercel/next"
+    },
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
     }
-  }
+  ],
+  "functions": {
+    "api/items": {
+      "maxDuration": 55,
+      "memory": 1024
+    },
+    "api/[company]": {
+      "maxDuration": 10,
+      "memory": 1024
+    }
+  },
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/" }
+  ],
+  "env": {
+    "MONGODB_URI": "@mongodb_uri"
+  },
+  "rewrites": [
+    {
+      "source": "/clothing.json",
+      "destination": "/api/items"
+    }
+  ]
 }

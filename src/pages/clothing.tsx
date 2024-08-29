@@ -42,9 +42,7 @@ const Clothing: React.FC<{
   const [loadedItems, setLoadedItems] = useState(initialItems || []);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(
-    initialItems?.length < totalItemsCount
-  );
+  const [hasMore, setHasMore] = useState(initialItems.length < totalItemsCount);
   const [filters, setFilters] = useState({
     tags: Array.isArray(router.query.tags)
       ? router.query.tags
