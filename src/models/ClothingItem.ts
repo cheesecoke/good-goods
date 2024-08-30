@@ -10,6 +10,9 @@ const clothingItemSchema = new mongoose.Schema({
   tags: { type: [String], required: true },
 });
 
+// Create indexes for faster queries
+clothingItemSchema.index({ tags: 1, category: 1, company: 1, price: 1 });
+
 const ClothingItem =
   mongoose.models.ClothingItem ||
   mongoose.model("ClothingItem", clothingItemSchema, "clothingitems");

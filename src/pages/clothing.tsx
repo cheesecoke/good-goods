@@ -1,13 +1,37 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
+import React, {
+  Suspense,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 import { GetServerSideProps } from "next";
 import { useRouter } from "next/router";
 import NavBar from "@/components/NavBar";
-import Sidebar from "@/components/Sidebar";
-import ItemList from "@/components/ItemList";
-import MobileFilters from "@/components/MobileFilters";
-import ScrollToTopButton from "@/components/ScrollToTopButton";
 import mongoose from "mongoose";
 import ClothingItem from "@/models/ClothingItem";
+
+// Next.js dynamic imports
+const Sidebar = dynamic(() => import("@/components/Sidebar"), { ssr: false });
+const ScrollToTopButton = dynamic(
+  () => import("@/components/ScrollToTopButton"),
+  {
+    ssr: false,
+  }
+);
+
+// React.lazy components
+const ItemList = React.lazy(() => import("@/components/ItemList"));
+const MobileFilters = React.lazy(() => import("@/components/MobileFilters"));
+
+let isConnected = false;
+const connectToDatabase = async () => {
+  if (!isConnected) {
+    await mongoose.connect(process.env.MONGODB_URI!, {});
+    isConnected = true;
+  }
+};
 
 const Clothing: React.FC<{
   initialItems: any[];
@@ -15,7 +39,7 @@ const Clothing: React.FC<{
   availableTags: string[];
 }> = ({ initialItems, totalItemsCount, availableTags }) => {
   const router = useRouter();
-  const [loadedItems, setLoadedItems] = useState(initialItems);
+  const [loadedItems, setLoadedItems] = useState(initialItems || []);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(initialItems.length < totalItemsCount);
@@ -86,9 +110,9 @@ const Clothing: React.FC<{
         const { items } = await res.json();
 
         if (newPage === 1) {
-          setLoadedItems(items);
+          setLoadedItems(items || []);
         } else {
-          setLoadedItems((prev) => [...prev, ...items]);
+          setLoadedItems((prev) => [...prev, ...(items || [])]);
         }
 
         // Cache the loaded items
@@ -159,29 +183,30 @@ const Clothing: React.FC<{
     fetchItems(page + 1);
   }, [page, hasMore, loading, fetchItems]);
 
-  // Debounce implementation to prevent multiple API calls on scroll
-  const debounce = (func: () => void, wait: number) => {
-    let timeout: NodeJS.Timeout;
-    return (...args: []) => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-  };
+  // Use Intersection Observer instead of scroll event
+  const observerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const handleScroll = debounce(() => {
-      if (
-        window.innerHeight + window.scrollY >=
-          document.body.offsetHeight - 500 &&
-        hasMore &&
-        !loading
-      ) {
-        loadMoreItems();
-      }
-    }, 200); // 200ms debounce time
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading) {
+          loadMoreItems();
+        }
+      },
+      { rootMargin: "100px" } // Trigger 100px before the end of the page
+    );
 
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    const currentObserverRef = observerRef.current;
+
+    if (currentObserverRef) {
+      observer.observe(currentObserverRef);
+    }
+
+    return () => {
+      if (currentObserverRef) {
+        observer.unobserve(currentObserverRef);
+      }
+    };
   }, [loading, hasMore, loadMoreItems]);
 
   return (
@@ -195,29 +220,31 @@ const Clothing: React.FC<{
         </div>
 
         <div className="lg:hidden">
-          <MobileFilters
-            availableTags={availableTags}
-            activeFilters={filters.tags}
-            activeCategories={filters.categories}
-            activeCompanies={filters.companies}
-            activePriceRange={filters.price as string | null}
-            onFilterChange={(tags) => toggleFilter("tags", tags)}
-            onCategoryChange={(categories) =>
-              toggleFilter("categories", categories)
-            }
-            onCompanyChange={(companies) =>
-              toggleFilter("companies", companies)
-            }
-            onPriceChange={(price) => toggleFilter("price", price)}
-            clearFilters={() =>
-              handleFilterChange({
-                tags: [],
-                categories: [],
-                companies: [],
-                price: null,
-              })
-            }
-          />
+          <Suspense fallback={<div>Loading Filters...</div>}>
+            <MobileFilters
+              availableTags={availableTags}
+              activeFilters={filters.tags}
+              activeCategories={filters.categories}
+              activeCompanies={filters.companies}
+              activePriceRange={filters.price as string | null}
+              onFilterChange={(tags) => toggleFilter("tags", tags)}
+              onCategoryChange={(categories) =>
+                toggleFilter("categories", categories)
+              }
+              onCompanyChange={(companies) =>
+                toggleFilter("companies", companies)
+              }
+              onPriceChange={(price) => toggleFilter("price", price)}
+              clearFilters={() =>
+                handleFilterChange({
+                  tags: [],
+                  categories: [],
+                  companies: [],
+                  price: null,
+                })
+              }
+            />
+          </Suspense>
         </div>
 
         <div className="pt-12 lg:grid lg:grid-cols-3 lg:gap-x-8 xl:grid-cols-4">
@@ -251,7 +278,15 @@ const Clothing: React.FC<{
           </aside>
 
           <div className="mt-6 lg:col-span-2 lg:mt-0 xl:col-span-3">
-            <ItemList items={loadedItems} />
+            <Suspense fallback={<div>Loading Items...</div>}>
+              {Array.isArray(loadedItems) && loadedItems.length > 0 ? (
+                <ItemList items={loadedItems} />
+              ) : (
+                <div>No Items to display.</div>
+              )}
+            </Suspense>
+
+            <div ref={observerRef}></div>
           </div>
 
           {loading && <div>Loading more items...</div>}
@@ -263,17 +298,34 @@ const Clothing: React.FC<{
   );
 };
 
+let cachedTags: string[] | null = null;
+let cachedItemCount: number | null = null;
+
 export const getServerSideProps: GetServerSideProps = async (context) => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI!, {});
-    const initialItems = await ClothingItem.find({}).limit(16).exec();
-    const totalItemsCount = await ClothingItem.countDocuments();
-    const availableTags = await ClothingItem.distinct("tags");
+    await connectToDatabase();
+
+    const [initialItems, itemCount, tags] = await Promise.all([
+      ClothingItem.find({}, "name price category imageUrl link company")
+        .limit(16)
+        .exec(),
+      cachedItemCount
+        ? Promise.resolve(cachedItemCount)
+        : ClothingItem.countDocuments(),
+      cachedTags ? Promise.resolve(cachedTags) : ClothingItem.distinct("tags"),
+    ]);
+
+    // Cache the item count and tags if not already cached
+    if (!cachedItemCount) cachedItemCount = itemCount;
+    if (!cachedTags) cachedTags = tags;
+
+    // Ensure availableTags is an array and filter out any undefined values
+    const availableTags = cachedTags?.filter((tag) => tag !== undefined) || [];
 
     return {
       props: {
-        initialItems: JSON.parse(JSON.stringify(initialItems)),
-        totalItemsCount,
+        initialItems: JSON.parse(JSON.stringify(initialItems)) || [],
+        totalItemsCount: cachedItemCount || 0,
         availableTags,
       },
     };

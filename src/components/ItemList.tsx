@@ -17,6 +17,11 @@ type ItemListProps = {
 };
 
 const ItemList: React.FC<ItemListProps> = ({ items }) => {
+  // Safeguard: Ensure items is an array before mapping
+  if (!Array.isArray(items) || items.length === 0) {
+    return <div>No items to display.</div>;
+  }
+
   return (
     <div className="flex flex-wrap">
       {items.map((item) => (
@@ -38,15 +43,22 @@ const ItemList: React.FC<ItemListProps> = ({ items }) => {
                 {item.category}
               </p>
               <div className="my-2">
-                {item.tags.map((tag, index) => (
-                  <span
-                    key={tag}
-                    className="inline-block text-sm text-gray-500 mr-2"
-                  >
-                    {tag}
-                    {index < item.tags.length - 1 && " |"}
+                {/* Safeguard: Ensure tags is defined and an array */}
+                {Array.isArray(item.tags) && item.tags.length > 0 ? (
+                  item.tags.map((tag, index) => (
+                    <span
+                      key={tag}
+                      className="inline-block text-sm text-gray-500 mr-2"
+                    >
+                      {tag}
+                      {index < item.tags.length - 1 && " |"}
+                    </span>
+                  ))
+                ) : (
+                  <span className="inline-block text-sm text-gray-500">
+                    No tags available
                   </span>
-                ))}
+                )}
               </div>
               <a
                 href={item.link}
